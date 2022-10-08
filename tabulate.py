@@ -1,8 +1,9 @@
-import pandas as pd
-import numpy as np
+import logging
 import operator
 
-import logging
+import numpy as np
+import pandas as pd
+
 LOG = logging.getLogger(__name__)
 
 # Optimizations:
@@ -21,18 +22,23 @@ class CvrStatus:
         self.status_df['cur_choice'] = cvr_df[choices_cols[0]]
         self.status_df['vote_remaining'] = initial_vote_value
 
-        self.choices_cols = choices_cols
-
     
     def skip_cvrs_to_next_rank(self, cvr_mask):
         # caching the lookup is probably a premature optimization
         try: self._choice_lookup
         except AttributeError:
-            self._choice_lookup = (self.cvr_df[self.choice_cols].join(pd.Series(['exhausted']*len(self.cvr_df), name='exhausted'))).to_numpy()
+            self._choice_lookup = np.hstack(
+                [
+                    self.cvr_df[self.choice_cols].to_numpy(),
+                    np.full((len(self.cvr_df), 1), "exhausted"),
+                ],
+            )
             self._lookup_range = np.arange(len(self.cvr_df))
 
         self.status_df.cur_choice_i += cvr_mask
-        self.status_df.cur_choice = self._choice_lookup[self._lookup_range, self.status_df.cur_choice_i]
+        self.status_df.cur_choice = self._choice_lookup[
+            self._lookup_range, self.status_df.cur_choice_i
+        ]
 
     def skip_cvrs_with_choices(self, choices, repeat=True):
         if not repeat: raise Exception("Not Implemented.")
@@ -100,9 +106,3 @@ def tabulate(cvr_df, choice_columns, divide=operator.truediv):
                 cvr_status.skip_cvrs_with_choices(['undervote', 'overvote', 'UWI'] + winners + losers, repeat=True)
                 cvr_status.sum_votes_by_choice(is_loser)
                 LOG.info(f"Redistributed {loser}'s {cvr_status.sum_votes(is_loser)} remaining votes: {cvr_status.sum_votes_by_choice(is_loser)}")
-
-                
-
-
-
-# idx, cols = pd.factorize(df['names'])
