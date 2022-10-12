@@ -1,6 +1,6 @@
 
 [tool.poetry]
-name = "pyrcv"
+name = "easyrcv"
 version = "0.1.0"
 description = "Simple universal RCV tabulator"
 authors = ["Kevin McDonough <kmacdough@gmail.com>"]

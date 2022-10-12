@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from pyrcv.config import TabulatorConfig
-from pyrcv.tabulate import Tabulator
+from easyrcv.config import TabulatorConfig
+from easyrcv.tabulate import Tabulator
 
 BRIGHTSPOTS_RESOURCE_DIR = (
     Path(__file__).parent.resolve()

@@ -4,7 +4,7 @@ from fractions import Fraction
 import numpy as np
 import pandas as pd
 
-from pyrcv.config import TabulatorConfig, TabulatorRules
+from easyrcv.config import TabulatorConfig, TabulatorRules
 
 LOG = logging.getLogger(__name__)
 
