@@ -1,12 +1,10 @@
 import logging
-import operator
-import re
 from fractions import Fraction
 
 import numpy as np
 import pandas as pd
 
-from config import TabulatorConfig, TabulatorRules
+from pyrcv.config import TabulatorConfig, TabulatorRules
 
 LOG = logging.getLogger(__name__)
 
@@ -44,7 +42,6 @@ class CvrStatus:
     def vote_remaining(self, value):
         self.df.vote_remaining = value
 
-    
     def skip_cvrs_to_next_rank(self, cvr_mask):
         self.df._cur_rank_i += cvr_mask
         self.update_cur_choice_from_rank()
