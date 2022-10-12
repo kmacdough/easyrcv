@@ -5,6 +5,7 @@ version = "0.1.0"
 description = "Simple universal RCV tabulator"
 authors = ["Kevin McDonough <kmacdough@gmail.com>"]
 readme = "README.md"
+license = "LICENSE.md"
 
 [tool.poetry.dependencies]
 python = "^3.10"
