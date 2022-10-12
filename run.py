@@ -1,9 +1,11 @@
-import pandas as pd
-import numpy as np
-from config import TabulatorConfig
-from tabulate import tabulate, CvrStatus
-from fractions import Fraction
 import logging
+from fractions import Fraction
+
+import numpy as np
+import pandas as pd
+
+from config import TabulatorConfig
+from tabulate import Tabulator
 
 logging.basicConfig()
 logging.getLogger().setLevel(logging.DEBUG)
@@ -17,4 +19,5 @@ df.rename(inplace=True, columns=dict(zip(CHOICES, [c[:3] for c in CHOICES])))
 CHOICES =  [c[:3] for c in CHOICES]
 CANDIDATES = [c.name for c in cfg.candidates]
 
-tabulate(df, CHOICES, divide=Fraction)
+t = Tabulator(cfg.rules)
+t.tabulate(df, CHOICES)

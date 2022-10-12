@@ -1,9 +1,13 @@
 from __future__ import annotations
+
+import json
 from dataclasses import dataclass
 from enum import Enum
+from fractions import Fraction
 from typing import Any
-import json
+
 import pandas as pd
+
 
 @dataclass
 class TabulatorConfig:
@@ -15,7 +19,7 @@ class TabulatorConfig:
 
     @classmethod
     def from_file(cls, file):
-        with open('2013_minneapolis_park_bottoms_up_config.json', 'r') as f:
+        with open(file, "r") as f:
             return cls.from_dict(json.load(f))
 
     @classmethod
@@ -88,7 +92,6 @@ class CvrSourceConfig:
     def load_df(self):
         return pd.read_excel(self.file_path)
 
-
 @dataclass
 class Candidate():
     name: str
@@ -135,21 +138,45 @@ class TabulatorRules:
     exhaust_on_duplicate_candidate: bool
     rules_description: str
 
+    @property
+    def T(self):
+        match self.decimal_places_for_vote_arithmetic:
+            case 0:
+                return Fraction
+            case n if n >= 1:
+                return Fraction
+                # return float
+            case n:
+                raise "Expected {n} >= 0 for decimal_places_for_vote_arithmetic"
+
+    def threshold(self, eligible_votes, remaining_winners):
+        if self.hare_quota:
+            return self.T(eligible_votes) / (1 + self.T(remaining_winners))
+        else:
+            return self.T(eligible_votes) / (1 + self.T(remaining_winners))
+
+    def select_winners(self, vote_totals, threshold):
+        return vote_totals.index[vote_totals > threshold].to_list()
+
+    def select_losers(self, vote_totals, threshold):
+        cannot_win = vote_totals.sort_values().cumsum() < threshold
+        return vote_totals.index[cannot_win].to_list()
+
     @classmethod
     def from_dict(cls, config_d):
         return cls(
-            TiebreakMode(config_d['tiebreakMode']),
-            OvervoteRule(config_d['overvoteRule']),
-            WinnerElectionMode(config_d['winnerElectionMode']),
-            int(config_d['randomSeed']),
-            int(config_d['numberOfWinners']),
-            int(config_d['decimalPlacesForVoteArithmetic']),
-            int(config_d['minimumVoteThreshold']),
-            int(config_d['maxSkippedRanksAllowed']),
-            int(config_d['maxRankingsAllowed']),
-            bool(config_d['nonIntegerWinningThreshold']),
-            bool(config_d['hareQuota']),
-            bool(config_d['batchElimination']),
-            bool(config_d['exhaustOnDuplicateCandidate']),
-            str(config_d['rulesDescription']),
+            TiebreakMode(config_d["tiebreakMode"]),
+            OvervoteRule(config_d["overvoteRule"]),
+            WinnerElectionMode(config_d["winnerElectionMode"]),
+            int(config_d["randomSeed"]),
+            int(config_d["numberOfWinners"]),
+            int(config_d["decimalPlacesForVoteArithmetic"]),
+            int(config_d["minimumVoteThreshold"]),
+            int(config_d["maxSkippedRanksAllowed"]),
+            int(config_d["maxRankingsAllowed"]),
+            bool(config_d["nonIntegerWinningThreshold"]),
+            bool(config_d["hareQuota"]),
+            bool(config_d["batchElimination"]),
+            bool(config_d["exhaustOnDuplicateCandidate"]),
+            str(config_d["rulesDescription"]),
         )
