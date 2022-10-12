@@ -11,7 +11,7 @@ import pandas as pd
 
 @dataclass
 class TabulatorConfig:
-    tabulator_version: str
+    tabulator_version: str | None
     output_settings: TabulatorOutputConfig
     cvr_file_sources: list[CvrSourceConfig]
     candidates: list[Candidate]
@@ -25,7 +25,7 @@ class TabulatorConfig:
     @classmethod
     def from_dict(cls, config_d):
         return cls(
-            config_d["tabulatorVersion"],
+            config_d.get("tabulatorVersion", None),
             TabulatorOutputConfig.from_dict(config_d["outputSettings"]),
             [CvrSourceConfig.from_dict(s) for s in config_d["cvrFileSources"]],
             [Candidate.from_dict(c) for c in config_d["candidates"]],
@@ -60,17 +60,17 @@ class TabulatorOutputConfig:
             str(config_d["contestJurisdiction"]),
             str(config_d["contestOffice"]),
             bool(config_d["tabulateByPrecinct"]),
-            bool(config_d["generateCdfJson"]),
+            bool(config_d.get("generateCdfJson", False)),
         )
 
 
 @dataclass
 class CvrSourceConfig:
     file_path: str
-    first_vote_column_index: int
+    first_vote_column_index: int | None
     first_vote_row_index: int
     id_column_index: int | None
-    precinct_column_index: int
+    precinct_column_index: int | None
     provider: str
     treat_blank_as_undeclared_write_in: bool
     overvote_label: str
@@ -78,18 +78,18 @@ class CvrSourceConfig:
     undeclared_write_in_label: str
 
     @classmethod
-    def from_dict(cls, config_d):
+    def from_dict(cls, d):
         return cls(
-            str(config_d["filePath"]),
-            int(config_d["firstVoteColumnIndex"]),
-            int(config_d["firstVoteRowIndex"]),
-            opt_int(config_d["idColumnIndex"]),
-            int(config_d["precinctColumnIndex"]),
-            str(config_d["provider"]),
-            bool(config_d["treatBlankAsUndeclaredWriteIn"]),
-            str(config_d["overvoteLabel"]),
-            str(config_d["undervoteLabel"]),
-            str(config_d["undeclaredWriteInLabel"]),
+            str(d["filePath"]),
+            opt_int(d.get("firstVoteColumnIndex", "")),
+            opt_int(d.get("firstVoteRowIndex", "")),
+            opt_int(d.get("idColumnIndex", "")),
+            opt_int(d.get("precinctColumnIndex", "")),
+            str(d["provider"]),
+            bool(d["treatBlankAsUndeclaredWriteIn"]),
+            str(d["overvoteLabel"]),
+            str(d["undervoteLabel"]),
+            str(d["undeclaredWriteInLabel"]),
         )
 
     def load_df(self):
@@ -121,32 +121,63 @@ class Candidate:
 
 class TiebreakMode(Enum):
     RANDOM = "random"
+    USE_CANDIDATE_ORDER = "useCandidateOrder"
+    STOP_COUNTING_AND_ASK = "stopCountingAndAsk"
+    GENERATE_PERMUTATION = "generatePermutation"
+    PREVIOUS_ROUND_COUNTS_THEN_RANDOM = "previousRoundCountsThenRandom"
 
 
 class OvervoteRule(Enum):
     ALWAYS_SKIP_TO_NEXT_RANK = "alwaysSkipToNextRank"
+    EXHAUST_IMMEDIATELY = "exhaustImmediately"
+    EXHAUST_IF_MULTIPLE_CONTINUING = "exhaustIfMultipleContinuing"
 
 
+# fmt: off
 class WinnerElectionMode(Enum):
     BOTTOMS_UP = "bottomsUp"
-
+    SINGLE_WINNER_MAJORITY = "singleWinnerMajority"
+    MULTI_WINNER_ALLOW_MULTIPLE_WINNERS_PER_ROUND = "multiWinnerAllowMultipleWinnersPerRound"
+    MULTI_WINNER_ALLOW_ONLY_ONE_WINNER_PER_ROUND = "multiWinnerAllowOnlyOneWinnerPerRound"
+    MULTI_PASS_IRV = "multiPassIrv"
+    BOTTOMS_UP_USING_PERCENTAGE_THRESHOLD = "bottomsUpUsingPercentageThreshold"
+# fmt: on
 
 @dataclass
 class TabulatorRules:
     tiebreak_mode: TiebreakMode
     overvote_rule: OvervoteRule
     winner_election_mode: WinnerElectionMode
-    random_seed: int
+    random_seed: int | None
     number_of_winners: int
     decimal_places_for_vote_arithmetic: int
-    minimum_vote_threshold: int
+    minimum_vote_threshold: int | None
     max_skipped_ranks_allowed: int
-    max_rankings_allowed: int
+    max_rankings_allowed: int | None
     non_integer_winning_threshold: bool
     hare_quota: bool
     batch_elimination: bool
     exhaust_on_duplicate_candidate: bool
     rules_description: str
+
+    @classmethod
+    def from_dict(cls, d):
+        return cls(
+            TiebreakMode(d["tiebreakMode"]),
+            OvervoteRule(d["overvoteRule"]),
+            WinnerElectionMode(d["winnerElectionMode"]),
+            opt_int(d.get("randomSeed", "")),
+            int(d["numberOfWinners"]),
+            int(d["decimalPlacesForVoteArithmetic"]),
+            opt_int(d["minimumVoteThreshold"]),
+            int(d["maxSkippedRanksAllowed"]),
+            None if d["maxRankingsAllowed"] == "max" else int(d["maxRankingsAllowed"]),
+            bool(d["nonIntegerWinningThreshold"]),
+            bool(d["hareQuota"]),
+            bool(d["batchElimination"]),
+            bool(d["exhaustOnDuplicateCandidate"]),
+            str(d["rulesDescription"]),
+        )
 
     @property
     def T(self):
@@ -172,21 +203,3 @@ class TabulatorRules:
         cannot_win = vote_totals.sort_values().cumsum() < threshold
         return vote_totals.index[cannot_win].to_list()
 
-    @classmethod
-    def from_dict(cls, config_d):
-        return cls(
-            TiebreakMode(config_d["tiebreakMode"]),
-            OvervoteRule(config_d["overvoteRule"]),
-            WinnerElectionMode(config_d["winnerElectionMode"]),
-            int(config_d["randomSeed"]),
-            int(config_d["numberOfWinners"]),
-            int(config_d["decimalPlacesForVoteArithmetic"]),
-            int(config_d["minimumVoteThreshold"]),
-            int(config_d["maxSkippedRanksAllowed"]),
-            int(config_d["maxRankingsAllowed"]),
-            bool(config_d["nonIntegerWinningThreshold"]),
-            bool(config_d["hareQuota"]),
-            bool(config_d["batchElimination"]),
-            bool(config_d["exhaustOnDuplicateCandidate"]),
-            str(config_d["rulesDescription"]),
-        )

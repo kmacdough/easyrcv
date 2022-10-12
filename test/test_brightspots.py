@@ -10,11 +10,11 @@ BRIGHTSPOTS_RESOURCE_DIR = (
     Path(__file__).parent.resolve()
     / "reference_repos/BrightSpots/rcv/src/test/resources/network/brightspots/rcv/test_data"
 )
-NON_TEST_DIRS = ["unisyn_cvrs"]
+NON_STANDARD_DIRS = ["unisyn_cvrs", "invalid_params_test", "invalid_sources_test"]
 SCENARIO_DIRS = [
     path
     for path in BRIGHTSPOTS_RESOURCE_DIR.iterdir()
-    if path.is_dir() and path.name not in NON_TEST_DIRS
+    if path.is_dir() and path.name not in NON_STANDARD_DIRS
 ]
 
 
