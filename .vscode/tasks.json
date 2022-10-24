@@ -1,0 +1,13 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "run.py",
+            "type": "shell",
+            "command": "poetry run python run.py  2013_minneapolis_park_bottoms_up_config.json",
+            "problemMatcher": []
+        }
+    ]
+}

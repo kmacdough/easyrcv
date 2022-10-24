@@ -1,5 +1,9 @@
 import logging
+import math
+from dataclasses import dataclass, field
+from decimal import ROUND_DOWN, getcontext
 from fractions import Fraction
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -17,78 +21,70 @@ LOG = logging.getLogger(__name__)
 #  - Consider separating "calculations" from status/operations.
 #  - exhausted should be guaranteed to not match a choice.
 #  - consider using 1-based indexing. Would take slight coding tweaks, but not unreasonable.
-class CvrStatus:
-    def __init__(self, cvr_df, choices_cols, initial_vote_value):
-        self.cvr_df = cvr_df
-        self.choice_cols = choices_cols
-        self.df = pd.DataFrame(index=cvr_df.index)
+class BallotSet:
+    def __init__(self, ballot_records, ranks, initial_vote_value):
+        self.ballot_records = ballot_records
+        self.ranks = ranks
+        self.df = pd.DataFrame(index=ballot_records.index)
         self.df["_cur_rank_i"] = 0
-        self.df["cur_choice"] = cvr_df[choices_cols[0]]
+        self.df["cur_candidate"] = ballot_records[ranks[0]]
         self.df["vote_remaining"] = initial_vote_value
 
     @property
-    def cur_choice(self):
+    def cur_candidate(self):
         """
         Current candidate for each cvr, as set by `self._cur_rank_i`,
-        or "exhausted" if self._cur_rank_i > len(self.choice_cols)
+        or "exhausted" if self._cur_rank_i > len(self.ranks)
         """
-        return self.df.cur_choice
+        return self.df.cur_candidate
 
     @property
     def vote_remaining(self):
         return self.df.vote_remaining
 
-    @vote_remaining.setter
-    def vote_remaining(self, value):
-        self.df.vote_remaining = value
+    # def update_vote_remaining(self, to_ballot, apply_fn):
+    #     self.df[]
 
-    def skip_cvrs_to_next_rank(self, cvr_mask):
-        self.df._cur_rank_i += cvr_mask
-        self.update_cur_choice_from_rank()
-
-    def skip_cvrs_to_next_rank(self, cvr_mask):
-        self.df._cur_rank_i += cvr_mask
-        self.update_cur_choice_from_rank()
-
-    def skip_cvrs_with_choices(self, choices, repeat=True):
-        if not repeat:
-            raise Exception("Not Implemented.")
-        while sum(matching_cvrs := self.cur_choice.isin(choices)) > 0:
-            LOG.debug(
-                f"Skipping rank on {sum(matching_cvrs)} ballots, {self.count_ballots_by_choice(matching_cvrs).to_dict()}"
+    def skip_to_next_rank(self, cvr_mask):
+        """Move ballots matching `cvr_mask` to next choice"""
+        # For each ballot we store a the current
+        try:
+            self._choice_lookup
+        except AttributeError:
+            # numpy array for quickly looking up cvr choice by rank (0-indexed)
+            self._choice_lookup = np.hstack(
+                (
+                    self.ballot_records[self.ranks].to_numpy(),
+                    np.full((len(self.ballot_records), 1), "exhausted"),
+                ),
             )
-            self.skip_cvrs_to_next_rank(matching_cvrs)
+            self._lookup_range = np.arange(len(self.ballot_records))
+
+        self.df._cur_rank_i += cvr_mask
+
+        self.df.cur_candidate = self._choice_lookup[
+            self._lookup_range, self.df._cur_rank_i
+        ]
 
     # TODO need better name
     def update_vote_remaining(self, for_cvrs, ratio):
         self.df.loc[for_cvrs, "vote_remaining"] *= ratio
 
-    def update_cur_choice_from_rank(self):
-        try:  # only need to build lookup once;
-            self._choice_lookup
-        except AttributeError:
-            # numpy array for quickly looking up cvr choice by rank (0-indexed)
-            self._choice_lookup = np.hstack(
-                [
-                    self.cvr_df[self.choice_cols].to_numpy(),
-                    np.full((len(self.cvr_df), 1), "exhausted"),
-                ],
-            )
-            self._lookup_range = np.arange(len(self.cvr_df))
-
-        self.df.cur_choice = self._choice_lookup[
-            self._lookup_range, self.df._cur_rank_i
-        ]
+    def update_cur_candidate_from_rank(self):
+        pass
 
     @property
     def exhausted(self):
-        return self.df.cur_choice == "exhausted"
+        return self.df.cur_candidate == "exhausted"
 
     def count_ballots_by_choice(self, cvr_mask):
-        return self.df.cur_choice[cvr_mask].value_counts()
+        return self.df.cur_candidate[cvr_mask].value_counts()
 
-    def sum_votes_by_choice(self, cvr_mask):
-        return self.df[cvr_mask].groupby("cur_choice")["vote_remaining"].sum()
+    def tally_votes(self):
+        return self.df[~self.exhausted].groupby("cur_candidate")["vote_remaining"].sum()
+
+    def tally_votes(self):
+        return self.df[~self.exhausted].groupby("cur_candidate")["vote_remaining"].sum()
 
     def sum_votes(self, cvr_mask):
         return sum(self.df.loc[cvr_mask, "vote_remaining"])
@@ -105,60 +101,151 @@ class BasicStrategy:
         vote_counts.index[vote_counts > threshold].to_list()
 
 
+@dataclass
+class TabulationRound:
+    round_number: int
+    vote_threshold: Any = None
+    vote_totals: Optional[pd.Series] = None
+    winners: list[str] = field(default_factory=list)
+    losers: list[str] = field(default_factory=list)
+    reallocations: Optional[pd.Series] = None
+
+    def to_dict(self):
+        # move to other classes
+        d = {
+            "totals": self.totals,
+            "winners": self.winners,
+            "losers": self.losers,
+            "reallocations": {
+                winner: self.reallocations[winner].to_dict()
+                for winner in self.reallocations.labels[0]
+            },
+        }
+
+
+@dataclass
+class Tabulation:
+    ballot_set: BallotSet
+    threshold: Optional[Any] = None
+    winners: list[str] = field(default_factory=list)
+    losers: list[str] = field(default_factory=list)
+    rounds: list[TabulationRound] = field(default_factory=list)
+
+
 class Tabulator:
-    def __init__(self, rules):
+    def __init__(self, rules: TabulatorRules):
         self.rules = rules
 
-    def tabulate(self, cvr_df, choice_columns):
-        num_winners = self.rules.number_of_winners
+    def tabulate(self, ballot_records: pd.DataFrame, ranks: list[str]):
         T = self.rules.T
+        getcontext().prec = 4
+        getcontext().rounding = ROUND_DOWN
 
-        cvr_status = CvrStatus(cvr_df, choice_columns, T(1))
-        winners = []
-        losers = []
-        round = 0
-        while len(winners) < num_winners:
-            round += 1
-            LOG.info(f"Round {round}. FIGHT!")
+        tabulation = Tabulation(BallotSet(ballot_records, ranks, T(1)))
 
-            # naively skip overvotes, undervotes, UWIs and current winners/losers
-            cvr_status.skip_cvrs_with_choices(
-                ["undervote", "overvote", "UWI"] + winners + losers, repeat=True
+        self.rules.skip_to_next_eligible_rank(
+            tabulation.ballot_set, tabulation.winners + tabulation.losers
+        )
+
+        tabulation.threshold = T(math.ceil(self.rules.threshold(tabulation)))
+
+        while len(tabulation.winners) < self.rules.number_of_winners:
+            round = self.tabulate_round(tabulation)
+            tabulation.winners += round.winners
+            tabulation.losers += round.losers
+            tabulation.rounds.append(round)
+
+        return tabulation
+
+    def tabulate_round(self, tabulation):
+        self.rules.skip_to_next_eligible_rank(
+            tabulation.ballot_set, tabulation.winners + tabulation.losers
+        )
+
+        round = TabulationRound(1 + len(tabulation.rounds))
+
+        round.vote_threshold = tabulation.threshold
+        # round.vote_threshold = self.rules.threshold(tabulation)
+        round.vote_totals = tabulation.ballot_set.tally_votes()
+        round.winners = self.rules.select_winners(round)
+        if round.winners:
+            for winner in round.winners:
+                T = self.rules.T
+                excess_votes = round.vote_totals[winner] - round.vote_threshold
+                excess_vote_ratio = T(T(excess_votes) / T(round.vote_totals[winner]))
+                picked_winner = tabulation.ballot_set.cur_candidate == winner
+                vr = tabulation.ballot_set.vote_remaining
+                tabulation.ballot_set.df.loc[
+                    picked_winner, "vote_remaining"
+                ] *= excess_vote_ratio
+
+            round.reallocations = self.reallocate_ballots(
+                tabulation.ballot_set,
+                round.winners,
+                ignore_candidates=tabulation.winners + tabulation.losers,
             )
-
-            # needs to be vote power
-
-            threshold = self.rules.threshold(
-                eligible_votes=cvr_status.sum_votes(~cvr_status.exhausted),
-                remaining_winners=num_winners - len(winners),
+        else:
+            round.losers = self.rules.select_losers(round)
+            round.reallocations = self.reallocate_ballots(
+                tabulation.ballot_set,
+                round.losers,
+                ignore_candidates=round.losers + tabulation.winners + tabulation.losers,
             )
-            LOG.info(f"Threshold: {threshold} votes")
-            totals = cvr_status.sum_votes_by_choice(~cvr_status.exhausted)
-            if round_winners := self.rules.select_winners(totals, threshold):
-                LOG.info(f"Ayyoo winners: {round_winners}")
-                winners += round_winners
-                # do in groupby or somethin
-                for winner in round_winners:
-                    excess_vote_ratio = T(
-                        T(totals[winner] - threshold) / T(totals[winner])
-                    )
-                    is_winner = cvr_status.cur_choice == winner
-                    cvr_status.vote_remaining.loc[is_winner] = (
-                        cvr_status.vote_remaining.loc[is_winner] * excess_vote_ratio
-                    )
-            elif round_losers := self.rules.select_losers(totals, threshold):
-                # Batch eliminiation; candidates who can't win, even if transferred ALL votes from worse performers.
-                losers += round_losers
-                LOG.info(f"Gosh darn losers: {round_losers}")
+        return round
 
-            for removed_candidate in round_winners + round_losers:
-                chose_candidate = cvr_status.cur_choice == removed_candidate
-                cvr_status.skip_cvrs_to_next_rank(chose_candidate)
-                cvr_status.skip_cvrs_with_choices(
-                    ["undervote", "overvote", "UWI"] + winners + losers, repeat=True
-                )
-                redistributed = cvr_status.sum_votes_by_choice(chose_candidate)
-                LOG.info(
-                    f"Redistributed {sum(redistributed)} votes from {removed_candidate}: {redistributed}"
-                )
-        return {}
+
+    def reallocate_ballots(self, ballot_set, from_candidates, ignore_candidates):
+        to_reallocate = ballot_set.cur_candidate.isin(from_candidates)
+
+        before = ballot_set.cur_candidate[to_reallocate]
+        ballot_set.skip_to_next_rank(to_reallocate)
+        self.rules.skip_to_next_eligible_rank(ballot_set, ignore_candidates)
+        after = ballot_set.cur_candidate[to_reallocate]
+        votes = ballot_set.vote_remaining[to_reallocate]
+
+        reallocations = pd.concat(
+            [before, after, votes], keys=["from", "to", "votes"], axis=1
+        )
+        x = reallocations.groupby(["from", "to"])["votes"].sum()
+        return x
+
+
+# TODO doesn't belong here
+def brightspots_output(tabulation):
+    t = tabulation
+    return {
+        "config": {
+            "contest": "2013 Minneapolis Park Board",
+            "date": "",
+            "jurisdiction": "Minneapolis",
+            "office": "Park and Recreation Commissioner",
+            "threshold": "14866",
+        },
+        "results": [
+            brightspots_round_output(i, round)
+            for i, round in enumerate(tabulation.rounds)
+        ],
+    }
+
+
+def brightspots_round_output(round_index, round: TabulationRound):
+    round_num = round_index + 1
+    uwi_str = "Undeclared Write-ins"
+    winners = [uwi_str if w == "UWI" else w for w in round.winners]
+    losers = [uwi_str if w == "UWI" else w for w in round.losers]
+    transfers = round.reallocations.rename(index={"UWI": uwi_str}).astype(str)
+    tally = round.vote_totals.rename(index={"UWI": uwi_str}).astype(str).to_dict()
+    tallyResults = [
+        {
+            "elected": winner,
+            "transfers": transfers[winner].to_dict(),
+        }
+        for winner in winners
+    ] + [
+        {
+            "eliminated": loser,
+            "transfers": transfers[loser].to_dict(),
+        }
+        for loser in losers
+    ]
+    return {"round": round_num, "tally": tally, "tallyResults": tallyResults}

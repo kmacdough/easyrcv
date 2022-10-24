@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
+from decimal import Decimal, Context
 from enum import Enum
 from fractions import Fraction
 from typing import Any
 
 import pandas as pd
 
+LOG = logging.getLogger(__name__)
 
 @dataclass
 class TabulatorConfig:
@@ -92,8 +95,8 @@ class CvrSourceConfig:
             str(d["undeclaredWriteInLabel"]),
         )
 
-    def load_df(self):
-        return pd.read_excel(self.file_path)
+    def load_df(self, path):
+        return pd.read_excel(path / self.file_path)
 
 
 @dataclass
@@ -182,24 +185,83 @@ class TabulatorRules:
     @property
     def T(self):
         match self.decimal_places_for_vote_arithmetic:
-            case 0:
+            case -1:
                 return Fraction
             case n if n >= 1:
-                return Fraction
+                return Decimal
                 # return float
             case n:
                 raise "Expected {n} >= 0 for decimal_places_for_vote_arithmetic"
 
-    def threshold(self, eligible_votes, remaining_winners):
+    def threshold(self, tabulation):
+        eligible_votes = )
+        remaining_winners = self.number_of_winners - len(tabulation.winners)
         if self.hare_quota:
             return self.T(eligible_votes) / (1 + self.T(remaining_winners))
         else:
             return self.T(eligible_votes) / (1 + self.T(remaining_winners))
 
-    def select_winners(self, vote_totals, threshold):
-        return vote_totals.index[vote_totals > threshold].to_list()
+    def select_winners(self, round):
+        return round.vote_totals.index[
+            round.vote_totals > round.vote_threshold
+        ].to_list()
 
-    def select_losers(self, vote_totals, threshold):
-        cannot_win = vote_totals.sort_values().cumsum() < threshold
-        return vote_totals.index[cannot_win].to_list()
+    def select_losers(self, round):  # vote_totals, threshold):
+        if self.batch_elimination:
+            cannot_win = round.vote_totals.sort_values().cumsum() < round.vote_threshold
+            return round.vote_totals.index[cannot_win].to_list()
+        else:
+            return [round.vote_totals.sort_values().index[0]]
 
+    def skip_to_next_eligible_rank(self, ballot_set, ignore_candidates):
+        find_ineligible = lambda ballots: ballots.cur_candidate.isin(
+            ["undervote", "overvote"] + ignore_candidates
+        )
+        while 0 < sum(is_ineligible := find_ineligible(ballot_set)):
+            msg = f"Skipping rank on {sum(is_ineligible)} ballots, {ballot_set.cur_candidate[is_ineligible].value_counts().to_dict()}"
+            LOG.debug(msg)
+            ballot_set.skip_to_next_rank(is_ineligible)
+
+    def arithmetic_context(self):
+        return decimal.Context(
+            prec=4,
+            rounding=None,
+            Emin=None,
+            Emax=None,
+            capitals=None,
+            clamp=None,
+            flags=None,
+            traps=None,
+        )
+
+    @cached_property
+    def arithmetic(self):
+        return DecimalArithmetic(self.decimal_places_for_vote_arithmetic)
+        match self.decimal_places_for_vote_arithmetic:
+            case -1:
+                return Fraction
+            case n if n >= 1:
+                return Decimal
+                # return float
+            case n:
+                raise "Expected {n} >= 0 for decimal_places_for_vote_arithmetic"
+
+    T = arithmetic_type
+
+class DecimalArithmetic:
+    def __init__(self, places):
+        self.places = places
+
+    @property
+    def T(self):
+        return Decimal
+    
+    def mul(self, v1, v2):
+        (self.T(v1) * self.T(v2)).quantize(self.places, context=self.context)
+    
+    def div(self, v1, v2):
+        (self.T(v1) / self.T(v2)).quantize(self.places, context=self.context)
+    
+    @property
+    def context(self):
+        return self.Context(rounding=ROUND_DOWN)

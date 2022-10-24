@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from easyrcv.config import TabulatorConfig
-from easyrcv.tabulate import Tabulator
+from easyrcv.tabulate import Tabulator, brightspots_output
 
 BRIGHTSPOTS_RESOURCE_DIR = (
     Path(__file__).parent.resolve()
@@ -31,17 +31,21 @@ def test_scenario(scenario_dir):
     with open(scenario_dir / f"{dir_name}_expected_summary.json") as f:
         expected_summary = json.load(f)
 
-    output = run_scenario(cfg)
+    output = run_scenario(scenario_dir, cfg)
     assert output == expected_summary
 
 
-def run_scenario(cfg):
+def run_scenario(scenario_dir, cfg):
     src_cfg = cfg.cvr_file_sources[0]
-    df = src_cfg.load_df()
+    df = src_cfg.load_df(scenario_dir)
 
     CHOICES = df.columns[src_cfg.first_vote_column_index - 1 :][
         : cfg.rules.max_rankings_allowed
     ]
 
     t = Tabulator(cfg.rules)
-    return t.tabulate(df, CHOICES)
+    tabulation = t.tabulate(df, CHOICES)
+
+    x = brightspots_output(tabulation)
+    pass
+    return x
