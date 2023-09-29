@@ -74,17 +74,16 @@ class BallotSet:
         pass
 
     @property
-    def exhausted(self):
+    def is_exhausted(self):
         return self.df.cur_candidate == "exhausted"
 
     def count_ballots_by_choice(self, cvr_mask):
         return self.df.cur_candidate[cvr_mask].value_counts()
 
     def tally_votes(self):
-        return self.df[~self.exhausted].groupby("cur_candidate")["vote_remaining"].sum()
-
-    def tally_votes(self):
-        return self.df[~self.exhausted].groupby("cur_candidate")["vote_remaining"].sum()
+        return (
+            self.df[~self.is_exhausted].groupby("cur_candidate")["vote_remaining"].sum()
+        )
 
     def sum_votes(self, cvr_mask):
         return sum(self.df.loc[cvr_mask, "vote_remaining"])
@@ -108,7 +107,7 @@ class TabulationRound:
     vote_totals: Optional[pd.Series] = None
     winners: list[str] = field(default_factory=list)
     losers: list[str] = field(default_factory=list)
-    reallocations: Optional[pd.Series] = None
+    transfers: Optional[pd.Series] = None
 
     def to_dict(self):
         # move to other classes
@@ -116,9 +115,9 @@ class TabulationRound:
             "totals": self.totals,
             "winners": self.winners,
             "losers": self.losers,
-            "reallocations": {
-                winner: self.reallocations[winner].to_dict()
-                for winner in self.reallocations.labels[0]
+            "transfers": {
+                winner: self.transfers[winner].to_dict()
+                for winner in self.transfers.labels[0]
             },
         }
 
@@ -179,14 +178,14 @@ class Tabulator:
                     picked_winner, "vote_remaining"
                 ] *= excess_vote_ratio
 
-            round.reallocations = self.reallocate_ballots(
+            round.transfers = self.transfer_ballots(
                 tabulation.ballot_set,
                 round.winners,
                 ignore_candidates=tabulation.winners + tabulation.losers,
             )
         else:
             round.losers = self.rules.select_losers(round)
-            round.reallocations = self.reallocate_ballots(
+            round.transfers = self.transfer_ballots(
                 tabulation.ballot_set,
                 round.losers,
                 ignore_candidates=round.losers + tabulation.winners + tabulation.losers,
@@ -194,7 +193,7 @@ class Tabulator:
         return round
 
 
-    def reallocate_ballots(self, ballot_set, from_candidates, ignore_candidates):
+    def transfer_ballots(self, ballot_set, from_candidates, ignore_candidates):
         to_reallocate = ballot_set.cur_candidate.isin(from_candidates)
 
         before = ballot_set.cur_candidate[to_reallocate]
@@ -203,10 +202,10 @@ class Tabulator:
         after = ballot_set.cur_candidate[to_reallocate]
         votes = ballot_set.vote_remaining[to_reallocate]
 
-        reallocations = pd.concat(
+        transfers = pd.concat(
             [before, after, votes], keys=["from", "to", "votes"], axis=1
         )
-        x = reallocations.groupby(["from", "to"])["votes"].sum()
+        x = transfers.groupby(["from", "to"])["votes"].sum()
         return x
 
 
@@ -233,7 +232,7 @@ def brightspots_round_output(round_index, round: TabulationRound):
     uwi_str = "Undeclared Write-ins"
     winners = [uwi_str if w == "UWI" else w for w in round.winners]
     losers = [uwi_str if w == "UWI" else w for w in round.losers]
-    transfers = round.reallocations.rename(index={"UWI": uwi_str}).astype(str)
+    transfers = round.transfers.rename(index={"UWI": uwi_str}).astype(str)
     tally = round.vote_totals.rename(index={"UWI": uwi_str}).astype(str).to_dict()
     tallyResults = [
         {

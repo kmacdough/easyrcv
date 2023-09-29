@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from decimal import Decimal, Context
+from decimal import Context, Decimal
 from enum import Enum
 from fractions import Fraction
 from typing import Any
@@ -194,12 +194,13 @@ class TabulatorRules:
                 raise "Expected {n} >= 0 for decimal_places_for_vote_arithmetic"
 
     def threshold(self, tabulation):
-        eligible_votes = )
+        eligible_votes = tabulation.ballot_set.tally_votes().sum()
         remaining_winners = self.number_of_winners - len(tabulation.winners)
+        T = self.arithmetic.T
         if self.hare_quota:
-            return self.T(eligible_votes) / (1 + self.T(remaining_winners))
+            return self.arithmetic.div(T(eligible_votes), T(remaining_winners))
         else:
-            return self.T(eligible_votes) / (1 + self.T(remaining_winners))
+            return self.arithmetic.div(T(eligible_votes), (1 + T(remaining_winners)))
 
     def select_winners(self, round):
         return round.vote_totals.index[
