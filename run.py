@@ -1,18 +1,25 @@
 import logging
+import os
+import sys
 from fractions import Fraction
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from simple_rcv.config import TabulatorConfig
-from simple_rcv.tabulate import Tabulator
+from easyrcv.config import TabulatorConfig
+from easyrcv.tabulate import Tabulator
 
 logging.basicConfig()
-logging.getLogger().setLevel(logging.DEBUG)
+logging.getLogger().setLevel(logging.ERROR)
 
-cfg = TabulatorConfig.from_file("2013_minneapolis_park_bottoms_up_config.json")
+if sys.argv[1] and Path(sys.argv[1]).is_file():
+    config_file = Path(sys.argv[1]).absolute()
+else:
+    config_file = Path(os.getcwd()) / "2013_minneapolis_park_bottoms_up_config.json"
+cfg = TabulatorConfig.from_file(config_file)
 src_cfg = cfg.cvr_file_sources[0]
-df = src_cfg.load_df()
+df = src_cfg.load_df(src_cfg.cvr_file_sources)
 
 CHOICES = df.columns[src_cfg.first_vote_column_index - 1 :][
     : cfg.rules.max_rankings_allowed
