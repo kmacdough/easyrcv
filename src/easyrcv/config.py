@@ -191,7 +191,7 @@ class TabulatorRules:
             case -1:
                 return fractions.Fraction
             case n if n >= 1:
-                return Decimal
+                return decimal.Decimal
                 # return float
             case n:
                 raise "Expected {n} >= 0 for decimal_places_for_vote_arithmetic"
@@ -245,7 +245,7 @@ class TabulatorRules:
             case -1:
                 return fractions.Fraction
             case n if n >= 1:
-                return Decimal
+                return decimal.Decimal
                 # return float
             case n:
                 raise "Expected {n} >= 0 for decimal_places_for_vote_arithmetic"
