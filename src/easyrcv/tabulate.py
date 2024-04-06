@@ -1,8 +1,7 @@
 import logging
 import math
-from dataclasses import dataclass, field
-from decimal import ROUND_DOWN, getcontext
-from fractions import Fraction
+import decimal
+import dataclasses
 from typing import Any, Optional
 
 import numpy as np
@@ -16,6 +15,7 @@ LOG = logging.getLogger(__name__)
 #  - Convert choices to whatever pandas "enum" type is
 #  - only update changes in current vote
 #  - categoricals
+
 
 # Improvements
 #  - Consider separating "calculations" from status/operations.
@@ -41,9 +41,6 @@ class BallotSet:
     @property
     def vote_remaining(self):
         return self.df.vote_remaining
-
-    # def update_vote_remaining(self, to_ballot, apply_fn):
-    #     self.df[]
 
     def skip_to_next_rank(self, cvr_mask):
         """Move ballots matching `cvr_mask` to next choice"""
@@ -100,13 +97,13 @@ class BasicStrategy:
         vote_counts.index[vote_counts > threshold].to_list()
 
 
-@dataclass
+@dataclasses.dataclass
 class TabulationRound:
     round_number: int
     vote_threshold: Any = None
     vote_totals: Optional[pd.Series] = None
-    winners: list[str] = field(default_factory=list)
-    losers: list[str] = field(default_factory=list)
+    winners: list[str] = dataclasses.field(default_factory=list)
+    losers: list[str] = dataclasses.field(default_factory=list)
     transfers: Optional[pd.Series] = None
 
     def to_dict(self):
@@ -122,13 +119,13 @@ class TabulationRound:
         }
 
 
-@dataclass
+@dataclasses.dataclass
 class Tabulation:
     ballot_set: BallotSet
     threshold: Optional[Any] = None
-    winners: list[str] = field(default_factory=list)
-    losers: list[str] = field(default_factory=list)
-    rounds: list[TabulationRound] = field(default_factory=list)
+    winners: list[str] = dataclasses.field(default_factory=list)
+    losers: list[str] = dataclasses.field(default_factory=list)
+    rounds: list[TabulationRound] = dataclasses.field(default_factory=list)
 
 
 class Tabulator:
@@ -137,14 +134,13 @@ class Tabulator:
 
     def tabulate(self, ballot_records: pd.DataFrame, ranks: list[str]):
         T = self.rules.T
-        getcontext().prec = 4
-        getcontext().rounding = ROUND_DOWN
+        decimal.getcontext().prec = 4
+        decimal.getcontext().rounding = decimal.ROUND_DOWN
 
         tabulation = Tabulation(BallotSet(ballot_records, ranks, T(1)))
 
-        self.rules.skip_to_next_eligible_rank(
-            tabulation.ballot_set, tabulation.winners + tabulation.losers
-        )
+        ignore_candidates = tabulation.winners + tabulation.losers
+        self.rules.skip_to_next_eligible_rank(tabulation.ballot_set, ignore_candidates)
 
         tabulation.threshold = T(math.ceil(self.rules.threshold(tabulation)))
 
@@ -191,7 +187,6 @@ class Tabulator:
                 ignore_candidates=round.losers + tabulation.winners + tabulation.losers,
             )
         return round
-
 
     def transfer_ballots(self, ballot_set, from_candidates, ignore_candidates):
         to_reallocate = ballot_set.cur_candidate.isin(from_candidates)

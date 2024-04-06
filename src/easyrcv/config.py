@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import json
 import logging
+import decimal
+import fractions
+import enum
+import functools
 from dataclasses import dataclass
-from decimal import Context, Decimal
-from enum import Enum
-from fractions import Fraction
 from typing import Any
 
 import pandas as pd
 
 LOG = logging.getLogger(__name__)
+
 
 @dataclass
 class TabulatorConfig:
@@ -122,7 +124,7 @@ class Candidate:
         return "C(" + ", ".join(bits) + ")"
 
 
-class TiebreakMode(Enum):
+class TiebreakMode(enum.Enum):
     RANDOM = "random"
     USE_CANDIDATE_ORDER = "useCandidateOrder"
     STOP_COUNTING_AND_ASK = "stopCountingAndAsk"
@@ -130,14 +132,14 @@ class TiebreakMode(Enum):
     PREVIOUS_ROUND_COUNTS_THEN_RANDOM = "previousRoundCountsThenRandom"
 
 
-class OvervoteRule(Enum):
+class OvervoteRule(enum.Enum):
     ALWAYS_SKIP_TO_NEXT_RANK = "alwaysSkipToNextRank"
     EXHAUST_IMMEDIATELY = "exhaustImmediately"
     EXHAUST_IF_MULTIPLE_CONTINUING = "exhaustIfMultipleContinuing"
 
 
 # fmt: off
-class WinnerElectionMode(Enum):
+class WinnerElectionMode(enum.Enum):
     BOTTOMS_UP = "bottomsUp"
     SINGLE_WINNER_MAJORITY = "singleWinnerMajority"
     MULTI_WINNER_ALLOW_MULTIPLE_WINNERS_PER_ROUND = "multiWinnerAllowMultipleWinnersPerRound"
@@ -145,6 +147,7 @@ class WinnerElectionMode(Enum):
     MULTI_PASS_IRV = "multiPassIrv"
     BOTTOMS_UP_USING_PERCENTAGE_THRESHOLD = "bottomsUpUsingPercentageThreshold"
 # fmt: on
+
 
 @dataclass
 class TabulatorRules:
@@ -186,7 +189,7 @@ class TabulatorRules:
     def T(self):
         match self.decimal_places_for_vote_arithmetic:
             case -1:
-                return Fraction
+                return fractions.Fraction
             case n if n >= 1:
                 return Decimal
                 # return float
@@ -235,19 +238,22 @@ class TabulatorRules:
             traps=None,
         )
 
-    @cached_property
+    @functools.cached_property
     def arithmetic(self):
         return DecimalArithmetic(self.decimal_places_for_vote_arithmetic)
         match self.decimal_places_for_vote_arithmetic:
             case -1:
-                return Fraction
+                return fractions.Fraction
             case n if n >= 1:
                 return Decimal
                 # return float
             case n:
                 raise "Expected {n} >= 0 for decimal_places_for_vote_arithmetic"
 
-    T = arithmetic_type
+    @functools.cached_property
+    def T(self):
+        return arithmetic.type
+
 
 class DecimalArithmetic:
     def __init__(self, places):
@@ -255,14 +261,14 @@ class DecimalArithmetic:
 
     @property
     def T(self):
-        return Decimal
-    
+        return decimal.Decimal
+
     def mul(self, v1, v2):
         (self.T(v1) * self.T(v2)).quantize(self.places, context=self.context)
-    
+
     def div(self, v1, v2):
         (self.T(v1) / self.T(v2)).quantize(self.places, context=self.context)
-    
+
     @property
     def context(self):
-        return self.Context(rounding=ROUND_DOWN)
+        return self.Context(rounding=decimal.ROUND_DOWN)
